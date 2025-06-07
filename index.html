@@ -1,0 +1,226 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>ESP Horarios - Gestión Online</title>
+<style>
+  body { font-family: Arial, sans-serif; padding: 20px; background: #f7f7f7; }
+  h1 { color: #2c3e50; }
+  #form-container {
+    max-width: 700px; margin-bottom: 20px; background: white; padding: 15px;
+    border-radius: 6px; box-shadow: 0 0 5px #ccc;
+  }
+  input[type="text"] {
+    padding: 8px; width: 70%; font-size: 1em; margin-right: 10px;
+  }
+  button {
+    padding: 9px 15px; font-size: 1em; cursor: pointer;
+    background-color: #27ae60; border: none; border-radius: 4px;
+    color: white;
+  }
+  button:hover {
+    background-color: #219150;
+  }
+  table {
+    border-collapse: collapse; width: 100%; margin-top: 20px; background: white;
+    box-shadow: 0 0 10px rgba(0,0,0,0.1);
+  }
+  th, td {
+    border: 1px solid #ddd; padding: 10px; text-align: center;
+  }
+  th {
+    background-color: #2980b9; color: white;
+  }
+  input.schedule-input {
+    width: 60px; padding: 5px; font-weight: bold; text-align: center;
+    text-transform: uppercase;
+    border-radius: 3px; border: 1px solid #ccc;
+  }
+  input.schedule-input:focus {
+    border-color: #2980b9;
+    outline: none;
+  }
+  #actions {
+    margin-top: 15px;
+  }
+  #actions button {
+    background-color: #2980b9;
+    margin-right: 10px;
+  }
+  #actions button:hover {
+    background-color: #1c5980;
+  }
+</style>
+</head>
+<body>
+
+<h1>ESP Horarios - Gestión Online</h1>
+
+<div id="form-container">
+  <input type="text" id="employeeName" placeholder="Nombre del empleado" />
+  <button onclick="addEmployee()">Agregar Empleado</button>
+</div>
+
+<table id="scheduleTable" aria-label="Tabla de horarios">
+  <thead>
+    <tr>
+      <th>Empleado</th>
+      <th>Lunes</th>
+      <th>Martes</th>
+      <th>Miércoles</th>
+      <th>Jueves</th>
+      <th>Viernes</th>
+      <th>Sábado</th>
+      <th>Domingo</th>
+    </tr>
+  </thead>
+  <tbody>
+    <!-- Las filas se generarán aquí -->
+  </tbody>
+</table>
+
+<div id="actions">
+  <button onclick="saveSchedule()">Guardar Horario</button>
+  <button onclick="loadSchedule()">Cargar Horario</button>
+  <button onclick="exportCSV()">Exportar CSV</button>
+  <button onclick="importCSV()">Importar CSV</button>
+  <input type="file" id="fileInput" style="display:none" accept=".csv" onchange="handleFile(event)" />
+</div>
+
+<script>
+  let employees = [];
+
+  function addEmployee() {
+    const input = document.getElementById('employeeName');
+    const name = input.value.trim();
+    if (!name) {
+      alert('Por favor ingresa un nombre de empleado.');
+      return;
+    }
+    if (employees.find(e => e.name.toLowerCase() === name.toLowerCase())) {
+      alert('El empleado ya existe.');
+      return;
+    }
+    employees.push({ name: name, schedule: ['', '', '', '', '', '', ''] });
+    input.value = '';
+    renderTable();
+  }
+
+  function renderTable() {
+    const tbody = document.querySelector('#scheduleTable tbody');
+    tbody.innerHTML = '';
+    employees.forEach((emp, i) => {
+      const tr = document.createElement('tr');
+
+      const tdName = document.createElement('td');
+      tdName.textContent = emp.name;
+      tr.appendChild(tdName);
+
+      for (let d = 0; d < 7; d++) {
+        const td = document.createElement('td');
+        const input = document.createElement('input');
+        input.type = 'text';
+        input.maxLength = 2;
+        input.className = 'schedule-input';
+        input.value = emp.schedule[d];
+        input.placeholder = 'M/T/N/L';
+        input.title = 'Turnos: M=mañana, T=tarde, N=noche, L=libre';
+        input.dataset.empIndex = i;
+        input.dataset.dayIndex = d;
+        input.oninput = (e) => {
+          const empIdx = e.target.dataset.empIndex;
+          const dayIdx = e.target.dataset.dayIndex;
+          employees[empIdx].schedule[dayIdx] = e.target.value.toUpperCase();
+        };
+        td.appendChild(input);
+        tr.appendChild(td);
+      }
+      tbody.appendChild(tr);
+    });
+  }
+
+  function saveSchedule() {
+    localStorage.setItem('espHorarios', JSON.stringify(employees));
+    alert('Horario guardado localmente.');
+  }
+
+  function loadSchedule() {
+    const data = localStorage.getItem('espHorarios');
+    if (data) {
+      employees = JSON.parse(data);
+      renderTable();
+      alert('Horario cargado.');
+    } else {
+      alert('No hay horario guardado.');
+    }
+  }
+
+  function exportCSV() {
+    if (employees.length === 0) {
+      alert('No hay datos para exportar.');
+      return;
+    }
+    const headers = ['Empleado', 'Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado', 'Domingo'];
+    const rows = employees.map(emp => [emp.name, ...emp.schedule]);
+    let csvContent = "data:text/csv;charset=utf-8," 
+        + headers.join(",") + "\n" 
+        + rows.map(e => e.join(",")).join("\n");
+
+    const encodedUri = encodeURI(csvContent);
+    const link = document.createElement("a");
+    link.setAttribute("href", encodedUri);
+    link.setAttribute("download", "esp_horarios.csv");
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  }
+
+  function importCSV() {
+    document.getElementById('fileInput').click();
+  }
+
+  function handleFile(event) {
+    const file = event.target.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = function(e) {
+      const text = e.target.result;
+      parseCSV(text);
+      event.target.value = ''; // reset file input
+    };
+    reader.readAsText(file);
+  }
+
+  function parseCSV(text) {
+    const lines = text.trim().split('\n');
+    if (lines.length < 2) {
+      alert('Archivo CSV vacío o inválido.');
+      return;
+    }
+    const headers = lines[0].split(',').map(h => h.trim().toLowerCase());
+    if (!headers.includes('empleado')) {
+      alert('Archivo CSV inválido: falta columna "Empleado".');
+      return;
+    }
+    employees = [];
+    for (let i = 1; i < lines.length; i++) {
+      const cols = lines[i].split(',');
+      const name = cols[0].trim();
+      const schedule = cols.slice(1,8).map(s => s.trim().toUpperCase());
+      if (name) {
+        employees.push({ name, schedule });
+      }
+    }
+    renderTable();
+    alert('Horario importado.');
+  }
+
+  // Cargar horario automáticamente al abrir la página
+  window.onload = () => {
+    loadSchedule();
+  };
+</script>
+
+</body>
+</html>
