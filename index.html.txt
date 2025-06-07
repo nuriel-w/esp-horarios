@@ -1,0 +1,223 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>ESP Horarios Web 2.0</title>
+<style>
+  :root { --azul:#2980b9; --verde:#27ae60; --gris:#f7f7f7; font-family:Arial, sans-serif;}
+  body{background:var(--gris);margin:0;padding:20px;}
+  h1{color:#2c3e50;margin-top:0}
+  .card{background:#fff;padding:15px;margin-bottom:20px;border-radius:8px;box-shadow:0 0 8px rgba(0,0,0,.08)}
+  input[type=text],input[type=time],select,button{font-size:1em;padding:8px;border:1px solid #ccc;border-radius:4px}
+  button{cursor:pointer;background:var(--azul);color:#fff;border:none;margin-left:4px}
+  button:hover{background:#1c5980}
+  table{width:100%;border-collapse:collapse;margin-top:10px;background:#fff;box-shadow:0 0 8px rgba(0,0,0,.08)}
+  th,td{border:1px solid #ddd;text-align:center;padding:8px}
+  th{background:var(--azul);color:#fff}
+  .tiny-btn{background:#e74c3c;border:none;border-radius:50%;padding:4px 7px;font-weight:bold}
+  .tiny-btn:hover{background:#c0392b}
+  .time-input{width:95px}
+  .pos-select{width:110px}
+  #summaryTable td, #summaryTable th{padding:6px}
+</style>
+</head>
+<body>
+
+<h1>ESP Horarios – Gestión Online 2.0</h1>
+
+<div class="card">
+  <h3>Empleados</h3>
+  <input type="text" id="employeeName" placeholder="Nombre del empleado" />
+  <button onclick="addEmployee()">Agregar</button>
+</div>
+
+<div class="card">
+  <h3>Puestos</h3>
+  <input type="text" id="puestoName" placeholder="Ej.: Caja / Cocina" />
+  <button onclick="addPuesto()">Agregar puesto</button>
+  <span id="puestosList"></span>
+</div>
+
+<table id="scheduleTable" aria-label="Tabla de horarios">
+  <thead>
+    <tr>
+      <th>Empleado</th>
+      <th>Lun</th><th>Mar</th><th>Mié</th><th>Jue</th>
+      <th>Vie</th><th>Sáb</th><th>Dom</th><th>🗑️</th>
+    </tr>
+  </thead>
+  <tbody></tbody>
+</table>
+
+<div class="card" id="actions">
+  <button onclick="saveSchedule()">Guardar</button>
+  <button onclick="loadSchedule()">Cargar</button>
+  <button onclick="exportCSV()">Exportar CSV</button>
+  <button onclick="importCSV()">Importar CSV</button>
+  <input type="file" id="fileInput" style="display:none" accept=".csv" onchange="handleFile(event)" />
+</div>
+
+<div class="card">
+  <h3>Resumen por empleado</h3>
+  <table id="summaryTable">
+    <thead><tr><th>Empleado</th><th>Días asignados</th><th>Puestos utilizados</th></tr></thead>
+    <tbody></tbody>
+  </table>
+</div>
+
+<script>
+/* ==== Datos en memoria ==== */
+let employees = [];
+let puestos = ['Caja','Cocina','Limpieza'];  // puestos iniciales
+
+/* ==== Empleados ==== */
+function addEmployee(){
+  const name = document.getElementById('employeeName').value.trim();
+  if(!name){alert('Ingresa un nombre.');return;}
+  if(employees.some(e=>e.name.toLowerCase()===name.toLowerCase())){alert('Ese empleado ya existe.');return;}
+  employees.push({name, schedule:Array(7).fill({time:'',puesto:''})});
+  document.getElementById('employeeName').value='';
+  renderTable(); updateSummary();
+}
+function deleteEmployee(idx){
+  if(!confirm('¿Eliminar este empleado?'))return;
+  employees.splice(idx,1);
+  renderTable(); updateSummary();
+}
+
+/* ==== Puestos ==== */
+function addPuesto(){
+  const p = document.getElementById('puestoName').value.trim();
+  if(!p){alert('Ingresa un puesto.');return;}
+  if(puestos.includes(p)){alert('Ese puesto ya existe.');return;}
+  puestos.push(p); document.getElementById('puestoName').value='';
+  renderTable(); renderPuestosList();
+}
+function renderPuestosList(){
+  document.getElementById('puestosList').innerHTML =
+    'Puestos: ' + puestos.join(', ');
+}
+
+/* ==== Renderizado de tabla ==== */
+function renderTable(){
+  const tbody=document.querySelector('#scheduleTable tbody');
+  tbody.innerHTML='';
+  employees.forEach((emp,idx)=>{
+    const tr=document.createElement('tr');
+    /* Nombre */
+    let td=document.createElement('td'); td.textContent=emp.name; tr.appendChild(td);
+    /* 7 días */
+    for(let d=0;d<7;d++){
+      td=document.createElement('td');
+      const timeInput=document.createElement('input');
+      timeInput.type='time'; timeInput.className='time-input';
+      timeInput.value=emp.schedule[d].time;
+      timeInput.dataset.emp=idx; timeInput.dataset.day=d;
+      timeInput.onchange=updateCell;
+      const sel=document.createElement('select');
+      sel.className='pos-select';
+      puestos.forEach(p=>{
+        const opt=document.createElement('option');
+        opt.value=p; opt.textContent=p;
+        if(p===emp.schedule[d].puesto)opt.selected=true;
+        sel.appendChild(opt);
+      });
+      sel.dataset.emp=idx; sel.dataset.day=d;
+      sel.onchange=updateCell;
+      td.appendChild(timeInput); td.appendChild(sel);
+      tr.appendChild(td);
+    }
+    /* Botón borrar */
+    td=document.createElement('td');
+    const delBtn=document.createElement('button');
+    delBtn.textContent='✕'; delBtn.className='tiny-btn';
+    delBtn.onclick=()=>deleteEmployee(idx);
+    td.appendChild(delBtn); tr.appendChild(td);
+    tbody.appendChild(tr);
+  });
+  renderPuestosList();
+}
+function updateCell(e){
+  const emp= e.target.dataset.emp*1;
+  const day= e.target.dataset.day*1;
+  const row=employees[emp].schedule[day];
+  if(e.target.type==='time'){ row.time=e.target.value; }
+  else{ row.puesto=e.target.value; }
+  updateSummary();
+}
+
+/* ==== Resumen ==== */
+function updateSummary(){
+  const tbody=document.querySelector('#summaryTable tbody');
+  tbody.innerHTML='';
+  employees.forEach(emp=>{
+    const daysAsign=emp.schedule.filter(s=>s.time).length;
+    const puestosUnicos=[...new Set(emp.schedule.filter(s=>s.puesto).map(s=>s.puesto))].join(', ');
+    const tr=document.createElement('tr');
+    tr.innerHTML=`<td>${emp.name}</td><td>${daysAsign}</td><td>${puestosUnicos}</td>`;
+    tbody.appendChild(tr);
+  });
+}
+
+/* ==== Guardar / cargar (localStorage) ==== */
+function saveSchedule(){
+  localStorage.setItem('espHorariosEmps',JSON.stringify(employees));
+  localStorage.setItem('espHorariosPuestos',JSON.stringify(puestos));
+  alert('Horario guardado.');
+}
+function loadSchedule(){
+  const e=localStorage.getItem('espHorariosEmps');
+  const p=localStorage.getItem('espHorariosPuestos');
+  if(e){employees=JSON.parse(e);}
+  if(p){puestos=JSON.parse(p);}
+  renderTable(); updateSummary();
+}
+
+/* ==== CSV ==== */
+function exportCSV(){
+  if(employees.length===0){alert('Sin datos.');return;}
+  const head=['Empleado',
+    'Lun(Hora)','Lun(Puesto)','Mar(H)','Mar(P)','Mié(H)','Mié(P)',
+    'Jue(H)','Jue(P)','Vie(H)','Vie(P)','Sáb(H)','Sáb(P)','Dom(H)','Dom(P)'];
+  const rows=employees.map(emp=>{
+    const flat=[];
+    emp.schedule.forEach(s=>{flat.push(s.time);flat.push(s.puesto);});
+    return [emp.name,...flat];
+  });
+  let csv="data:text/csv;charset=utf-8,"+head.join(',')+"\n"+rows.map(r=>r.join(',')).join('\n');
+  const link=document.createElement('a');
+  link.href=encodeURI(csv); link.download='esp_horarios.csv';
+  document.body.appendChild(link); link.click(); document.body.removeChild(link);
+}
+function importCSV(){ document.getElementById('fileInput').click(); }
+function handleFile(evt){
+  const file=evt.target.files[0]; if(!file)return;
+  const reader=new FileReader();
+  reader.onload=e=>{
+    parseCSV(e.target.result);
+    evt.target.value='';
+  };
+  reader.readAsText(file);
+}
+function parseCSV(txt){
+  const lines=txt.trim().split(/\r?\n/);
+  if(lines.length<2){alert('CSV vacío.');return;}
+  employees=[]; // reset
+  for(let i=1;i<lines.length;i++){
+    const cols=lines[i].split(',');
+    const name=cols[0].trim(); if(!name)continue;
+    const sched=[];
+    for(let j=1;j<cols.length;j+=2){
+      sched.push({time:cols[j]||'',puesto:cols[j+1]||''});
+    }
+    employees.push({name,schedule:sched});
+  }
+  renderTable(); updateSummary(); alert('Importado.');
+}
+
+/* ==== Inicial ==== */
+window.onload=()=>{loadSchedule();}
+</script>
+</body>
+</html>
